@@ -381,10 +381,44 @@ function isTrustedTransportRequest(req: IncomingMessage): boolean {
   return isLoopbackHostname(authority.hostname) || trustedEntriesForHost(authority, req.headers.host as string).length > 0
 }
 
+/**
+ * Privileged schemes the DSH desktop shell renders the panel from. Requests the
+ * shell forwards to the Host can carry one of these as their Origin; a web page
+ * can never produce one, so accepting them is no wider than the loopback
+ * transport already is.
+ */
+const DESKTOP_SHELL_SCHEMES = ['dsh-app:', 'dsh-resource:']
+
+function isDesktopShellOrigin(origin: string): boolean {
+  try {
+    return DESKTOP_SHELL_SCHEMES.includes(new URL(origin).protocol)
+  } catch {
+    return false
+  }
+}
+
 function isTrustedBrowserRequest(req: IncomingMessage, requireOrigin: boolean, entries: readonly MintedAuthority[] | undefined): boolean {
-  if (req.headers['sec-fetch-site'] === 'cross-site') return false
   const origin = req.headers.origin
-  if (origin === undefined) return !requireOrigin
+  // The DSH desktop shell (Electron) serves the UI from a privileged custom
+  // scheme and forwards its own requests to the Host, where it deletes Host,
+  // Origin, Cookie and Sec-Fetch-Site (`forwardWebRequest` in dsh-desktop-host).
+  // Both shapes therefore reach a plugin route only from the local shell, and
+  // only after `isTrustedTransportRequest` proved a loopback peer talking to a
+  // loopback authority:
+  //   - `dsh-app://app` when a shell forwards its Origin, which is a real
+  //     same-machine origin the operator's own UI renders from;
+  //   - no Origin at all, which a browser cross-site request can never be
+  //     (Chromium always attaches one to a cross-origin POST), so requiring an
+  //     Origin here only ever refused the desktop shell.
+  if (typeof origin === 'string' && isDesktopShellOrigin(origin)) return true
+  if (req.headers['sec-fetch-site'] === 'cross-site') return false
+  if (origin === undefined) {
+    if (!requireOrigin) return true
+    // Keep configured-authority deployments strict: only a loopback Host (the
+    // plain local browser and the desktop shell) may omit an Origin.
+    const authority = requestAuthority(req)
+    return authority !== undefined && isLoopbackHostname(authority.hostname)
+  }
   if (typeof origin !== 'string') return false
   const authority = requestAuthority(req)
   if (authority === undefined) return false

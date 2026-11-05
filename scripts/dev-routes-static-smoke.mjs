@@ -288,6 +288,10 @@ step(
 // ── 3. the transport fence ──────────────────────────────────────────────────
 
 {
+  // DSH Desktop forwards its own requests here and strips Origin on the way, so
+  // an absent Origin on a loopback Host IS the desktop shell. A browser can never
+  // produce that shape: a cross-site POST always carries an Origin, and the
+  // transport half already pinned the peer and the Host to loopback.
   const body = '{}'
   const res = await request(route('status'), {
     method: 'POST',
@@ -295,9 +299,9 @@ step(
     body,
   })
   step(
-    'a POST with NO Origin is refused (403)',
-    res.status === 403 && res.json?.code === 'forbidden',
-    `${res.status} ${res.json?.code}`,
+    'a POST with NO Origin from a loopback Host is accepted (desktop shell)',
+    res.status === 200,
+    `${res.status} ${res.json?.code ?? 'ok'}`,
   )
 }
 {
@@ -521,6 +525,37 @@ const DESTINATION_ORIGIN_ENTRY = 'https://devices.example.test:8443'
     `peer 203.0.113.7 -> ${fromLan}, peer 127.0.0.1 -> ${fromLoopback}`,
   )
   configureTrustedAuthorities({})
+}
+{
+  // DSH Desktop renders the panel from the `dsh-app://` scheme and forwards every
+  // other request to the Host through dsh-desktop-host's `forwardWebRequest`,
+  // which deletes Origin, Sec-Fetch-Site, Host and Cookie on the way. A shell
+  // request is therefore a loopback peer on a loopback Host with NO Origin — and
+  // once that Origin is required, every POST route is unreachable from the app.
+  const { isTrustedRequest } = streamAccess
+  const port = mini.server.address().port
+  const shell = (headers, remoteAddress = '127.0.0.1') =>
+    isTrustedRequest({ method: 'POST', url: '/', headers, socket: { remoteAddress } }, true)
+  const bare = shell({ host: `127.0.0.1:${port}` })
+  const forced = shell({ host: `127.0.0.1:${port}`, origin: 'dsh-app://app' })
+  const resource = shell({ host: `127.0.0.1:${port}`, origin: 'dsh-resource://file' })
+  step(
+    'a request the desktop shell forwards (no Origin, loopback Host) is trusted',
+    bare === true && forced === true && resource === true,
+    `bare -> ${bare}, dsh-app://app -> ${forced}, dsh-resource://file -> ${resource}`,
+  )
+  const remoteShell = shell({ host: `127.0.0.1:${port}` }, '203.0.113.7')
+  step(
+    'an absent Origin never bypasses the loopback peer half',
+    remoteShell === false,
+    `peer 203.0.113.7 -> ${remoteShell}`,
+  )
+  // An allowlisted public authority keeps the strict requirement: only a loopback
+  // Host may omit Origin, so a reverse-proxied deployment is unaffected.
+  configureTrustedAuthorities({ trustedAuthorities: ['devices.example.test'] })
+  const proxied = shell({ host: 'devices.example.test' })
+  configureTrustedAuthorities({})
+  step('an allowlisted authority still requires Origin', proxied === false, `no Origin -> ${proxied}`)
 }
 
 // Canonical origins and YAML config must agree with the actual mounted fence.
