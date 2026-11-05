@@ -33,6 +33,7 @@ import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-conversation/clie
 import { AndroidPanel } from './android-panel-connected.js'
 import { androidCopy } from './copy.js'
 import { claimAndroidPanelDock, type AndroidPanelDockLease } from './android-panel-dock.js'
+import { androidDocumentShellTopInset, watchAndroidShellTopInset } from './android-shell-chrome.js'
 import { registerAndroidPanelSource } from './android-panel-trigger.js'
 import { androidSwitchedStreamMetaOf, ANDROID_DEVICE_PICKER_KEYFRAMES } from './android-device-picker.js'
 import type { AndroidSwitchResponse } from './protocol.js'
@@ -456,6 +457,10 @@ function AndroidPanelSurface({
   const [dockUnavailable, setDockUnavailable] = useState(false)
   // Right-edge px a foreign sidebar occupies; the surface docks left of it.
   const [dockOffset, setDockOffset] = useState(0)
+  // Top px covered by the host window's native caption buttons. The desktop
+  // shell paints them over the web view, so a surface pinned to `top: 0`
+  // would hide its own header close button underneath theirs.
+  const [shellTopInset, setShellTopInset] = useState(androidDocumentShellTopInset)
   const [widthState, dispatchWidth] = useReducer(
     androidPanelWidthStateNext,
     androidPanelWidthBounds(window.innerWidth).initial,
@@ -493,6 +498,13 @@ function AndroidPanelSurface({
     window.addEventListener('resize', onResize)
     return () => { window.removeEventListener('resize', onResize) }
   }, [])
+
+  // The caption overlay is a shell/window state, not a React state: watch the
+  // markers the preload toggles (fullscreen, platform) instead of sampling it
+  // once at mount.
+  useEffect(() => (
+    watchAndroidShellTopInset(() => { setShellTopInset(androidDocumentShellTopInset()) })
+  ), [])
 
   useLayoutEffect(() => {
     if (fullscreen) return
@@ -622,7 +634,7 @@ function AndroidPanelSurface({
   return (
     <section
       ref={surfaceRef}
-      style={{ ...surfaceStyles.surface, width, right: dockOffset }}
+      style={{ ...surfaceStyles.surface, width, right: dockOffset, top: shellTopInset }}
       data-android-panel-surface="docked"
       data-android-dock-offset={dockOffset > 0 ? String(dockOffset) : undefined}
       role="complementary"

@@ -74,6 +74,14 @@ export {
   type AndroidScreenshotSession,
 } from './android-screenshot-session.js'
 export {
+  ANDROID_SHELL_FULLSCREEN_ATTRIBUTE,
+  ANDROID_SHELL_TITLEBAR_ATTRIBUTE,
+  ANDROID_SHELL_TITLEBAR_VAR,
+  androidDocumentShellTopInset,
+  androidShellTopInset,
+  watchAndroidShellTopInset,
+} from './android-shell-chrome.js'
+export {
   AndroidLiveFrame,
   AndroidLiveFrameBody,
   type AndroidLiveFrameSessionState,

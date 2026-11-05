@@ -1040,6 +1040,43 @@ try {
     ) === undefined,
     `foreign 900px of 1200px viewport exceeds the ${client.ANDROID_DOCK_MAX_FOREIGN_FRACTION} fraction cap`,
   )
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Desktop shell caption inset (the panel must clear the native window buttons)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const shellRoot = (attributes, height) => {
+    const set = new Set(attributes)
+    const style = new Map(height === undefined ? [] : [[client.ANDROID_SHELL_TITLEBAR_VAR, height]])
+    return {
+      hasAttribute: name => set.has(name),
+      style: { getPropertyValue: name => style.get(name) ?? '' },
+    }
+  }
+  step(
+    'no shell marker (a plain browser tab) means no inset',
+    client.androidShellTopInset(undefined) === 0
+      && client.androidShellTopInset(null) === 0
+      && client.androidShellTopInset(shellRoot([], '40px')) === 0,
+    'an absent HTML root or an unmarked page pins the panel at top: 0',
+  )
+  step(
+    'the Windows caption overlay yields its own height as the top inset',
+    client.androidShellTopInset(shellRoot(['data-windows-titlebar'], '40px')) === 40
+      && client.androidShellTopInset(shellRoot(['data-windows-titlebar'], '52px')) === 52,
+    'html[data-windows-titlebar] + --dsh-windows-titlebar-height',
+  )
+  step(
+    'a fullscreen window has no caption overlay, so the inset collapses',
+    client.androidShellTopInset(shellRoot(['data-windows-titlebar', 'data-fullscreen'], '40px')) === 0,
+    'html[data-fullscreen] wins over the height variable',
+  )
+  step(
+    'a missing or malformed height never invents an inset',
+    client.androidShellTopInset(shellRoot(['data-windows-titlebar'])) === 0
+      && client.androidShellTopInset(shellRoot(['data-windows-titlebar'], 'auto')) === 0
+      && client.androidShellTopInset(shellRoot(['data-windows-titlebar'], '-4px')) === 0,
+    'unparseable / non-positive heights fall back to 0, not to a guessed 40',
+  )
 } catch (error) {
   step('smoke suite completed without an unexpected throw', false, error instanceof Error ? (error.stack ?? error.message) : String(error))
 }
